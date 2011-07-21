@@ -1,0 +1,128 @@
+#!/usr/bin/env python
+
+from sys import exit, stderr
+from getopt import getopt, GetoptError
+from pyPdf import PdfFileReader, PdfFileWriter
+import sys, os.path
+
+_name_ = "bookletMaker"
+_version_ = 1.0
+_debug_ = False
+_force_ = False
+
+def version_and_exit():
+    print "Version: %s" % _version_
+    exit(0)
+
+def usage():
+    return "Usage: %s [options] <input-pdf-file>\n" \
+           "        Makes a booklet from the input file and writes to the output file.\n" \
+           "\n" \
+           "        Options:\n" \
+           "            -o  --output=<file>     Define the output file.\n" \
+           "            -f  --force             Overrides output file if necessary.\n" \
+           "            -d  --debug             Prints debug messages.\n" \
+           "\n" \
+           "       %s [-h|--help]\n" \
+           "            Prints this text.\n" \
+           "\n" \
+           "       %s [-v|--version]\n" \
+           "            Prints version.\n" \
+           % (_name_, _name_, _name_)
+
+def usage_and_exit():
+    print usage()
+    exit(0)
+
+def debug(msg):
+    if _debug_:
+        stderr.write("DEBUG: "+msg+"\n")
+
+def debug_and_exit(msg, code):
+    debug(msg)
+    exit(code)
+    
+def error_and_exit(msg, code):
+    stderr.write(msg)
+    stderr.write("\nType '%s -h' for help.\n" % _name_)
+    exit(code)
+
+def main(argv):
+    try:
+        opts, args = getopt(argv, "hvdfo:", ["help", "version", "debug", "force", "output="])
+    except GetoptError:
+        error_and_exit("Invalid arguments.", 2)
+
+    inputFile = None
+    outputFile = None
+    
+    if args:
+        inputFile = args[0]
+
+    for opt, arg in opts:
+        if opt in ("-h", "--help"):
+            usage_and_exit()
+        if opt in ("-v", "--version"):
+            version_and_exit()
+        elif opt in ("-d", "--debug"):
+            global _debug_
+            _debug_ = True
+        elif opt in ("-f", "--force"):
+            global _force_
+            _force_ = True
+        elif opt in ("-o", "--output"):
+    		outputFile = arg
+    	else:
+    	    debug("Forgotten option: %s" % opt)
+    
+    if not inputFile:
+        error_and_exit("No input file set.", 1)
+    if not os.path.isfile(inputFile):
+	    error_and_exit("Invalid file: %s" % inputFile, 1)
+    
+    if not outputFile:
+        basename, extention = os.path.splitext(inputFile)
+        outputFile = basename+" booklet"+extention
+    if not _force_ and os.path.exists(outputFile):
+	    error_and_exit("Output file already exists: %s" % outputFile, 1)
+    
+    if inputFile == outputFile:
+        error_and_exit("Can NOT read from and write to the same file: %s" % inputFile, 1)
+        
+    inputStream = open(inputFile, "rb")
+    outputStream = open(outputFile, "wb")
+    
+    input = PdfFileReader(inputStream)
+    output = PdfFileWriter()
+
+    if input.numPages % 4:
+        error_and_exit("%s pages count (%s) should be multiple of 4." \
+        % (inputFile,input.numPages), 1)
+
+    make_booklet(input, output)
+
+    debug("Writing...")
+    output.write(outputStream)
+    outputStream.close()
+
+def make_booklet(input, output):
+    debug("Number of pages: %s" % input.numPages)
+
+    i = 0
+    j = input.numPages - 1
+    debug("Into loop...")
+    while i < j:
+        debug("Pages %s %s %s %s" % (j, i, i+1, j-1))
+        output.addPage(input.getPage(j))
+        output.addPage(input.getPage(i))
+        j-=1
+        i+=1
+        output.addPage(input.getPage(i))
+        output.addPage(input.getPage(j))
+        j-=1
+        i+=1
+    
+if __name__ == "__main__":
+    main(sys.argv[1:])
+    exit(0)
+
