@@ -16,9 +16,11 @@ def version_and_exit():
 
 def usage():
     return "Usage: %s [options] <input-pdf-file>\n" \
-           "        Makes a booklet from the input file and writes to the output file.\n" \
+           "        Makes a booklet from the input PDF file by reordering its pages\n" \
+           "        and writes to the output file.\n" \
            "\n" \
            "        Options:\n" \
+           "            -s  --size=<size>       Splits into booklets of the defined size.\n" \
            "            -o  --output=<file>     Define the output file.\n" \
            "            -f  --force             Overrides output file if necessary.\n" \
            "            -d  --debug             Prints debug messages.\n" \
@@ -49,12 +51,13 @@ def error_and_exit(msg, code):
 
 def main(argv):
     try:
-        opts, args = getopt(argv, "hvdfo:", ["help", "version", "debug", "force", "output="])
+        opts, args = getopt(argv, "hvds:fo:", ["help", "version", "debug", "size=", "force", "output="])
     except GetoptError:
         error_and_exit("Invalid arguments.", 2)
 
     inputFile = None
     outputFile = None
+    maxSize = None
     
     if args:
         inputFile = args[0]
@@ -67,6 +70,8 @@ def main(argv):
         elif opt in ("-d", "--debug"):
             global _debug_
             _debug_ = True
+        elif opt in ("-s", "--size"):
+            maxSize = arg
         elif opt in ("-f", "--force"):
             global _force_
             _force_ = True
@@ -74,6 +79,14 @@ def main(argv):
     		outputFile = arg
     	else:
     	    debug("Forgotten option: %s" % opt)
+
+    if maxSize:
+        try:
+            maxSize = int(maxSize)
+            if maxSize % 4:
+                error_and_exit("Booklets size (%s) must be multiple of 4." % maxSize, 1)
+        except ValueError:
+            error_and_exit("Booklets size must be an integer: %s" % maxSize, 1)
     
     if not inputFile:
         error_and_exit("No input file set.", 1)
@@ -99,18 +112,33 @@ def main(argv):
         error_and_exit("%s pages count (%s) should be multiple of 4." \
         % (inputFile,input.numPages), 1)
 
-    make_booklet(input, output)
+    if not maxSize:
+        maxSize = input.numPages
+    
+    make_booklets(maxSize, input, output)
 
     debug("Writing...")
     output.write(outputStream)
     outputStream.close()
 
-def make_booklet(input, output):
+def make_booklets(maxSize, input, output):
     debug("Number of pages: %s" % input.numPages)
+    debug("Max booklets size: %s" % maxSize)
 
     i = 0
-    j = input.numPages - 1
-    debug("Into loop...")
+    j = maxSize-1
+    
+    while i < input.numPages:
+        if j >= input.numPages:
+            j = input.numPages-1
+
+        make_booklet(i, j, input, output)
+        i += maxSize
+        j += maxSize
+
+def make_booklet(i, j, input, output):
+    debug("Making booklet from %s to %s." % (i, j))
+    
     while i < j:
         debug("Pages %s %s %s %s" % (j, i, i+1, j-1))
         output.addPage(input.getPage(j))
