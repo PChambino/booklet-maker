@@ -6,7 +6,7 @@ from pyPdf import PdfFileReader, PdfFileWriter
 import sys, os.path
 
 _name_ = "bookletMaker"
-_version_ = 1.0
+_version_ = 1.1
 _debug_ = False
 _force_ = False
 
