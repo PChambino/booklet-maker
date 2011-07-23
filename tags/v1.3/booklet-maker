@@ -1,0 +1,198 @@
+#!/usr/bin/env python
+
+"""
+A simple script to make booklets by reordering other PDF pages.
+"""
+
+__author__ = "Pedro Chambino"
+__author_email__ = "pchambino@gmail.com"
+
+_name_ = "bookletMaker"
+_version_ = 1.2
+_debug_ = False
+
+from sys import exit, stderr
+from getopt import getopt, GetoptError
+from pyPdf import PdfFileReader, PdfFileWriter
+from pyPdf.utils import PdfReadError
+import sys, os.path
+
+def version_and_exit():
+    print "Version: %s" % _version_
+    exit(0)
+
+def usage():
+    return "Usage: %s [options] <input-pdf-file>\n" \
+           "        Makes a booklet from the input PDF file by reordering its pages.\n" \
+           "\n" \
+           "        Options:\n" \
+           "            -d  --debug             Prints debug messages.\n" \
+           "            -s  --size=<size>       Splits into booklets of the defined size.\n" \
+           "            -o  --output=<file>     Define the output file.\n" \
+           "            -f  --force             Overrides output file if necessary.\n" \
+           "            -r  --range=<form>:<to> Selects range to make booklets.\n" \
+           "                --from=<n>          Lower bound value for range (see --range).\n" \
+           "                --to=<n>            Upper bound value for range (see --range).\n" \
+           "\n" \
+           "       %s [-h|--help]\n" \
+           "            Prints this text.\n" \
+           "\n" \
+           "       %s [-v|--version]\n" \
+           "            Prints version.\n" \
+           % (_name_, _name_, _name_)
+
+def usage_and_exit():
+    print usage()
+    exit(0)
+
+def debug(msg):
+    if _debug_:
+        stderr.write("DEBUG: "+msg+"\n")
+
+def debug_and_exit(msg, code):
+    debug(msg)
+    exit(code)
+    
+def error_and_exit(msg, code):
+    stderr.write(msg)
+    stderr.write("\nType '%s -h' for help.\n" % _name_)
+    exit(code)
+
+def validate_and_convert_to_int(name, value):
+    try:
+        return int(value)
+    except ValueError:
+        error_and_exit("%s value must be an integer: %s" % (name,value), 1)
+
+def main(argv):
+    try:
+        opts, args = getopt(argv, "hvds:fo:r:", 
+        ["help", "version", "debug", "size=", "force", 
+        "output=", "range=", "from=", "to="])
+    except GetoptError:
+        error_and_exit("Invalid arguments.", 1)
+
+    inputFile = None
+    outputFile = None
+    force = False
+    maxSize = None
+    fromPage = 0
+    toPage = None
+    
+    if args:
+        inputFile = args[0]
+
+    for opt, arg in opts:
+        if opt in ("-h", "--help"):
+            usage_and_exit()
+        if opt in ("-v", "--version"):
+            version_and_exit()
+        elif opt in ("-d", "--debug"):
+            global _debug_
+            _debug_ = True
+        elif opt in ("-s", "--size"):
+            maxSize = validate_and_convert_to_int("--size", arg)
+            if maxSize % 4:
+                error_and_exit("--size value must be multiple of 4: %s" % maxSize, 1)
+        elif opt in ("-f", "--force"):
+            global _force_
+            force = True
+        elif opt in ("-o", "--output"):
+    		outputFile = arg
+        elif opt in ("-r", "--range"):
+            try:
+                (fromPage, toPage) = arg.split(":")
+            except ValueError:
+                error_and_exit("--range value must be in format: <from>:<to>", 1)
+            fromPage = validate_and_convert_to_int("--range <from>", fromPage) - 1
+            toPage = validate_and_convert_to_int("--range <to>", toPage) - 1
+        elif opt in ("--from"):
+            fromPage = validate_and_convert_to_int("--from", arg) - 1
+        elif opt in ("--to"):
+            toPage = validate_and_convert_to_int("--to", arg) - 1
+        else:
+            debug("Forgotten option: %s" % opt)
+
+    if not inputFile:
+        error_and_exit("No input file set.", 1)
+    if not os.path.isfile(inputFile):
+	    error_and_exit("Invalid file: %s" % inputFile, 1)
+    
+    if not outputFile:
+        basename, extention = os.path.splitext(inputFile)
+        outputFile = basename+" booklet"+extention
+    if not force and os.path.exists(outputFile):
+	    error_and_exit("Output file already exists: %s" % outputFile, 1)
+    
+    if inputFile == outputFile:
+        error_and_exit("The input and output file can NOT be the same: %s" % inputFile, 1)
+
+    inputStream = open(inputFile, "rb")
+    
+    try:
+        input = PdfFileReader(inputStream)
+    except PdfReadError:
+        error_and_exit("Input file is not a PDF file: %s" % inputFile, 1)
+    
+    debug("File pages count: %s" % input.numPages)
+
+    if not toPage:
+        toPage = input.numPages - 1
+    elif toPage > input.numPages - 1:
+        error_and_exit("--to value must not be greater than file pages: %s < %s"
+        % (toPage, input.numPages) , 1)
+
+    if fromPage > toPage:
+        error_and_exit("--from value must not be greater than --to value: %s < %s" 
+        % (fromPage, toPage), 1)
+
+    pagesCount = toPage - fromPage + 1
+
+    if pagesCount % 4:
+        error_and_exit("Pages count should be multiple of 4: %s" % pagesCount, 1)
+
+    if not maxSize:
+        maxSize = pagesCount
+    
+    outputStream = open(outputFile, "wb")
+    output = PdfFileWriter()
+
+    make_booklets(fromPage, toPage, maxSize, input, output)
+
+    debug("Writing...")
+    output.write(outputStream)
+    outputStream.close()
+
+def make_booklets(fromPage, toPage, maxSize, input, output):
+    debug("Page range: %s-%s" % (fromPage, toPage))
+    debug("Max booklets size: %s" % maxSize)
+
+    i = fromPage
+    j = i+maxSize-1
+    
+    while i <= toPage:
+        if j > toPage:
+            j = toPage
+
+        make_booklet(i, j, input, output)
+        i += maxSize
+        j += maxSize
+
+def make_booklet(i, j, input, output):
+    debug("Making booklet from %s to %s." % (i, j))
+    
+    while i < j:
+        debug("Pages %s %s %s %s" % (j, i, i+1, j-1))
+        output.addPage(input.getPage(j))
+        output.addPage(input.getPage(i))
+        j-=1
+        i+=1
+        output.addPage(input.getPage(i))
+        output.addPage(input.getPage(j))
+        j-=1
+        i+=1
+    
+if __name__ == "__main__":
+    main(sys.argv[1:])
+    exit(0)
+
