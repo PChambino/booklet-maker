@@ -14,6 +14,7 @@ _debug_ = False
 from sys import exit, stderr
 from getopt import getopt, GetoptError
 from pyPdf import PdfFileReader, PdfFileWriter
+from pyPdf.utils import PdfReadError
 import sys, os.path
 
 def version_and_exit():
@@ -29,9 +30,9 @@ def usage():
            "            -s  --size=<size>       Splits into booklets of the defined size.\n" \
            "            -o  --output=<file>     Define the output file.\n" \
            "            -f  --force             Overrides output file if necessary.\n" \
-           "            -r  --range=<form>:<to> Splits into booklets of the defined size.\n" \
-           "                --from=<n>          Splits into booklets of the defined size.\n" \
-           "                --to=<n>            Splits into booklets of the defined size.\n" \
+           "            -r  --range=<form>:<to> Selects range to make booklets.\n" \
+           "                --from=<n>          Lower bound value for range (see --range).\n" \
+           "                --to=<n>            Upper bound value for range (see --range).\n" \
            "\n" \
            "       %s [-h|--help]\n" \
            "            Prints this text.\n" \
@@ -127,10 +128,11 @@ def main(argv):
         error_and_exit("The input and output file can NOT be the same: %s" % inputFile, 1)
 
     inputStream = open(inputFile, "rb")
-    outputStream = open(outputFile, "wb")
     
-    input = PdfFileReader(inputStream)
-    output = PdfFileWriter()
+    try:
+        input = PdfFileReader(inputStream)
+    except PdfReadError:
+        error_and_exit("Input file is not a PDF file: %s" % inputFile, 1)
     
     debug("File pages count: %s" % input.numPages)
 
@@ -152,6 +154,9 @@ def main(argv):
     if not maxSize:
         maxSize = pagesCount
     
+    outputStream = open(outputFile, "wb")
+    output = PdfFileWriter()
+
     make_booklets(fromPage, toPage, maxSize, input, output)
 
     debug("Writing...")
