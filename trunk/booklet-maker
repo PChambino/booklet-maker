@@ -8,13 +8,11 @@ __author__ = "Pedro Chambino"
 __author_email__ = "pchambino@gmail.com"
 
 _name_ = "bookletMaker"
-_version_ = 1.3
+_version_ = 1.4
 _debug_ = False
 
 from sys import exit, stderr
 from getopt import getopt, GetoptError
-from pyPdf import PdfFileReader, PdfFileWriter
-from pyPdf.utils import PdfReadError
 import sys, os.path
 
 def version_and_exit():
@@ -112,6 +110,12 @@ def main(argv):
             toPage = validate_and_convert_to_int("--to", arg) - 1
         else:
             debug("Forgotten option: %s" % opt)
+
+    try:
+        from pyPdf import PdfFileReader, PdfFileWriter
+        from pyPdf.utils import PdfReadError
+    except ImportError:
+        error_and_exit("Could NOT find pyPdf. Run: easy_install pyPdf", 1)
 
     if not inputFile:
         error_and_exit("No input file set.", 1)
