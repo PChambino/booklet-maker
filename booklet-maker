@@ -67,18 +67,13 @@ def main(argv):
         opts, args = getopt(argv, "hvds:fo:r:", 
         ["help", "version", "debug", "size=", "force", 
         "output=", "range=", "from=", "to="])
-    except GetoptError:
-        error_and_exit("Invalid arguments.", 1)
+    except GetoptError, err:
+        error_and_exit(err.msg, 1)
 
-    inputFile = None
-    outputFile = None
-    force = False
-    maxSize = None
-    fromPage = 0
-    toPage = None
-    
+    info = BookletMakerInfo()
+
     if args:
-        inputFile = args[0]
+        info.inputFile = args[0]
 
     for opt, arg in opts:
         if opt in ("-h", "--help"):
@@ -89,114 +84,153 @@ def main(argv):
             global _debug_
             _debug_ = True
         elif opt in ("-s", "--size"):
-            maxSize = validate_and_convert_to_int("--size", arg)
-            if maxSize % 4:
-                error_and_exit("--size value must be multiple of 4: %s" % maxSize, 1)
+            info.maxSize = validate_and_convert_to_int("--size", arg)
         elif opt in ("-f", "--force"):
-            global _force_
-            force = True
+            info.force = True
         elif opt in ("-o", "--output"):
-    		outputFile = arg
+            info.outputFile = arg
         elif opt in ("-r", "--range"):
             try:
-                (fromPage, toPage) = arg.split(":")
+                (info.fromPage, info.toPage) = arg.split(":")
             except ValueError:
                 error_and_exit("--range value must be in format: <from>:<to>", 1)
-            fromPage = validate_and_convert_to_int("--range <from>", fromPage) - 1
-            toPage = validate_and_convert_to_int("--range <to>", toPage) - 1
+            info.fromPage = validate_and_convert_to_int("--range <from>", info.fromPage) - 1
+            info.toPage = validate_and_convert_to_int("--range <to>", info.toPage) - 1
         elif opt in ("--from"):
-            fromPage = validate_and_convert_to_int("--from", arg) - 1
+            info.fromPage = validate_and_convert_to_int("--from", arg) - 1
         elif opt in ("--to"):
-            toPage = validate_and_convert_to_int("--to", arg) - 1
+            info.toPage = validate_and_convert_to_int("--to", arg) - 1
         else:
             debug("Forgotten option: %s" % opt)
+            
+    info.validate().make_booklets().write_booklets()
 
-    try:
-        from pyPdf import PdfFileReader, PdfFileWriter
-        from pyPdf.utils import PdfReadError
-    except ImportError:
-        error_and_exit("Could NOT find pyPdf. Run: easy_install pyPdf", 1)
 
-    if not inputFile:
-        error_and_exit("No input file set.", 1)
-    if not os.path.isfile(inputFile):
-	    error_and_exit("Invalid file: %s" % inputFile, 1)
+class BookletMakerInfo:
+
+    def __init__(self):
+        self.inputFile = None
+        self.outputFile = None
+        self.force = False
+        self.maxSize = None
+        self.fromPage = 0
+        self.toPage = None
+        
+    def validate(self):
+        try:
+            from pyPdf import PdfFileReader, PdfFileWriter
+            from pyPdf.utils import PdfReadError
+        except ImportError:
+            error_and_exit("Could NOT find pyPdf. Run: easy_install pyPdf", 1)
     
-    if not outputFile:
-        basename, extention = os.path.splitext(inputFile)
-        outputFile = basename+" booklet"+extention
-    if not force and os.path.exists(outputFile):
-	    error_and_exit("Output file already exists: %s" % outputFile, 1)
+        if self.maxSize and self.maxSize % 4:
+            error_and_exit("--size value must be multiple of 4: %s"
+                           % self.maxSize, 1)
+
+        if not self.inputFile:
+            error_and_exit("No input file set.", 1)
+        if not os.path.isfile(self.inputFile):
+            error_and_exit("Invalid file: %s" % self.inputFile, 1)
     
-    if inputFile == outputFile:
-        error_and_exit("The input and output file can NOT be the same: %s" % inputFile, 1)
-
-    inputStream = open(inputFile, "rb")
+        if not self.outputFile:
+            basename, extention = os.path.splitext(self.inputFile)
+            self.outputFile = basename+" booklet"+extention
+        if not self.force and os.path.exists(self.outputFile):
+            error_and_exit("Output file already exists: %s\n"
+                           "Use the --force option to override."
+                           % self.outputFile, 1)
     
-    try:
-        input = PdfFileReader(inputStream)
-    except PdfReadError:
-        error_and_exit("Input file is not a PDF file: %s" % inputFile, 1)
+        if self.inputFile == self.outputFile:
+            error_and_exit("The input and output file can NOT be the same: %s"
+                           % self.inputFile, 1)
     
-    debug("File pages count: %s" % input.numPages)
-
-    if not toPage:
-        toPage = input.numPages - 1
-    elif toPage > input.numPages - 1:
-        error_and_exit("--to value must not be greater than file pages: %s < %s"
-        % (toPage, input.numPages) , 1)
-
-    if fromPage > toPage:
-        error_and_exit("--from value must not be greater than --to value: %s < %s" 
-        % (fromPage, toPage), 1)
-
-    pagesCount = toPage - fromPage + 1
-
-    if pagesCount % 4:
-        error_and_exit("Pages count should be multiple of 4: %s" % pagesCount, 1)
-
-    if not maxSize:
-        maxSize = pagesCount
+        inputStream = open(self.inputFile, "rb")
+        
+        try:
+            input = PdfFileReader(inputStream)
+        except PdfReadError:
+            error_and_exit("Input file is not a PDF file: %s" % self.inputFile, 1)
+        
+        debug("File pages count: %s" % input.numPages)
     
-    outputStream = open(outputFile, "wb")
-    output = PdfFileWriter()
-
-    make_booklets(fromPage, toPage, maxSize, input, output)
-
-    debug("Writing...")
-    output.write(outputStream)
-    outputStream.close()
-
-def make_booklets(fromPage, toPage, maxSize, input, output):
-    debug("Page range: %s-%s" % (fromPage, toPage))
-    debug("Max booklets size: %s" % maxSize)
-
-    i = fromPage
-    j = i+maxSize-1
+        if not self.toPage:
+            self.toPage = input.numPages - 1
+        elif self.toPage > input.numPages - 1:
+            error_and_exit("--to value must not be greater than file pages: %s < %s"
+                           % (self.toPage, input.numPages) , 1)
     
-    while i <= toPage:
-        if j > toPage:
-            j = toPage
-
-        make_booklet(i, j, input, output)
-        i += maxSize
-        j += maxSize
-
-def make_booklet(i, j, input, output):
-    debug("Making booklet from %s to %s." % (i, j))
+        if self.fromPage > self.toPage:
+            error_and_exit("--from value must not be greater than --to value: %s < %s"
+                           % (self.fromPage, self.toPage), 1)
     
-    while i < j:
-        debug("Pages %s %s %s %s" % (j, i, i+1, j-1))
-        output.addPage(input.getPage(j))
-        output.addPage(input.getPage(i))
-        j-=1
-        i+=1
-        output.addPage(input.getPage(i))
-        output.addPage(input.getPage(j))
-        j-=1
-        i+=1
+        pagesCount = self.toPage - self.fromPage + 1
     
+        if pagesCount % 4:
+            error_and_exit("Pages count should be multiple of 4: %s"
+                           % pagesCount, 1)
+    
+        if not self.maxSize:
+            self.maxSize = pagesCount
+            
+        outputStream = open(self.outputFile, "wb")
+        output = PdfFileWriter()
+        
+        maker = BookletMaker()
+        maker.__dict__.update(self.__dict__)
+        maker.inputStream = inputStream
+        maker.outputStream = outputStream
+        maker.input = input
+        maker.output = output
+        
+        return maker
+
+
+class BookletMaker(BookletMakerInfo):
+    
+    def __init__(self):
+        BookletMakerInfo.__init__(self)
+        self.inputStream = None
+        self.outputStream = None
+        self.input = None
+        self.output = None
+
+    def write_booklets(self):
+        debug("Writing...")
+        self.output.write(self.outputStream)
+        self.outputStream.close()
+
+    def make_booklets(self):
+        debug("Page range: %s-%s" % (self.fromPage, self.toPage))
+        debug("Max booklets size: %s" % self.maxSize)
+    
+        i = self.fromPage
+        j = i+self.maxSize-1
+        
+        while i <= self.toPage:
+            if j > self.toPage:
+                j = self.toPage
+    
+            self.__make_booklet(i, j)
+            i += self.maxSize
+            j += self.maxSize
+            
+        return self
+    
+    def __make_booklet(self, i, j):
+        debug("Making booklet from %s to %s." % (i, j))
+        
+        while i < j:
+            debug("Pages %s %s %s %s" % (j, i, i+1, j-1))
+            self.output.addPage(self.input.getPage(j))
+            self.output.addPage(self.input.getPage(i))
+            j-=1
+            i+=1
+            self.output.addPage(self.input.getPage(i))
+            self.output.addPage(self.input.getPage(j))
+            j-=1
+            i+=1
+
+
 if __name__ == "__main__":
     main(sys.argv[1:])
     exit(0)
-
